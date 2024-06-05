@@ -1,0 +1,155 @@
+---
+title: "Tidyverse Practice"
+format: html
+editor: visual
+---
+
+## Conceptual Question
+
+1.  If your working directory is **myfolder/homework/**, what *relative* path would you specify to get the file located at **myfolder/Mydata.csv**?
+
+> You could use the filepath "../Mydata.csv" (the double period indicates going back one level of folders).
+
+2.  What are the major benefits of using R projects?
+
+> R Projects allow users to keep all information together in one place, have a common working directory, and also allow for future users to have common file paths.
+
+3.  What is git and what is github?
+
+> Git is a version control system. Github is an online repository that uses git.
+
+4.  What are the two main differences between a **tibble** and a **data.frame**?
+
+> One major difference is appearance. While `data.frame`'s print all the raw data (subject to a row/column constraint), `tibble`s just give a header of data, and also give information directly upon print such as the type of each column, and the number of rows (information that can usually be gleaned from a `data.frame` with `str()` or `summary()`). Another difference is that `data.frame`s don't remain `data.frame`s upon subsetting, while \`tibble s do.
+
+5.  Rewrite the following nested function call using baseR's chaining operator:
+
+> First we load in the required packages for the rest of our analysis
+
+```{r}
+library(tidyverse)
+library(DBI)
+library(RSQLite)
+library(Lahman)
+library(readr)
+library(readxl)
+```
+
+> Next, we untangle the nested function with chaining
+
+```{r}
+a=arrange(filter(select(as_tibble(iris), starts_with("Petal"), Species), Petal.Length<1.55), Species)
+
+b=iris|>
+  as_tibble() |>
+  select(starts_with("Petal"), Species) |>
+  filter(Petal.Length<1.55) |>
+  arrange(Species)
+
+all.equal(a,b)
+```
+
+6.  What is meant by long format data and wide format data? Which do we generally prefer for statistical analysis?
+
+> Long data format is where each row has one observation and each column is one variable. Wide data formats may have many different observations all on the same row. While wide data formats may be okay for data *visualization*, for data *analysis* is it generally preferable to have long data.
+
+## Reading Delimited Data
+
+We are given a data source called **glass.data** from . After inspecting the data, it is clear the format is csv (comma separated values). While we could use `read_csv` to read in this data to `R`, a more general method is to use `read_delimited`, and then specify the delimiter. Both functions come from the `tidyverse` package.
+
+```{r}
+glass.data=read_delim("https://www4.stat.ncsu.edu/~online/datasets/glass.data", 
+  delim=",",
+  col_names=c("Id","RI","Na","Mg","Al","Si","K","Ca","Ba","Fe","Type_of_glass"))
+glass.data
+```
+
+We now want to manipulate the data. The below chunk first creates a vector of names, and then relabels numeric data based on the position in this vector. We finish our study of the `glass` tibble by only showing cases where the `Fe` variable is less than 0.2, and when the type of glass is either tableware or headlamps.
+
+```{r}
+rename=c("building_windows_float_processed",
+         "building_windows_non_float_processed",
+         "vehicle_windows_float_processed",
+         "vehicle_windows_non_float_processed",
+         "containers",
+         "tableware",
+         "headlamps")
+
+glass=glass.data |>
+  mutate(Type_of_glass=ifelse(Type_of_glass==1, rename[1],
+                       ifelse(Type_of_glass==2, rename[2],
+                       ifelse(Type_of_glass==3, rename[3],
+                       ifelse(Type_of_glass==4, rename[4],
+                       ifelse(Type_of_glass==5, rename[5],
+                       ifelse(Type_of_glass==6, rename[6],
+                       ifelse(Type_of_glass==7, rename[7],
+                       "N/A")))))))) |>
+  filter(Fe<0.2 & (Type_of_glass=="tableware" | Type_of_glass=="headlamps"))
+glass
+```
+
+We are now told to load in `yeast.data`. Unlike the `glass.data`, upon inspection, this data is delimited with a double space. We can load it into R using a similar method as above.
+
+```{r}
+yeast.data=read_delim("https://www4.stat.ncsu.edu/~online/datasets/yeast.data",
+                      delim="  ",
+                      col_names=c("seq_name","mcg", "gvh", 
+                                  "alm", "mit","erl","pox",
+                                  "vac","nuc","class"))
+yeast.data
+```
+
+Again we want to manipulate the data. This time we remove the variables `seq_name` and `nuc`, and then compute the mean and median of each numeric variable, contingent on the class.
+
+```{r}
+yeast=yeast.data |>
+  select(-c(seq_name, nuc)) |>
+  group_by(class) |>
+  mutate(across(where(is.numeric), list(mean=mean, median=median), .names="{.col}_{.fn}"))
+yeast
+```
+
+## Combining Excel And Delimited Data
+
+We are now interested in data on white wine. After downloading the data source into our projects' working directory, we can directly access the file with the `read_excel` function from the `readxl` package. Like the above, we want to make some small modifications. Since our data source is an excel workbook with two different sheets, we load the first sheet, and use the data on the second sheet to name the columns in the first sheet. Also, we add a column to specify that the wine is white.
+
+```{r}
+excel_sheets("./white-wine.xlsx")
+
+white_wine=read_excel("./white-wine.xlsx",
+              sheet="white-wine")
+white_wine
+
+variables=as.data.frame(
+              read_excel("./white-wine.xlsx",
+              sheet="variables"))
+variables
+
+colnames(white_wine)=variables$Variables
+white_wine=mutate(white_wine, wine_type=rep("white", nrow(white_wine)))
+white_wine
+```
+
+We also have data on red wine. We again download the data source into our projects' working directory, though this data is delimited with semi-colons. Luckily the `readr` package has a nice function to deal with this format, namely `read_csv2`. To make sure the red and white wine data sets both have the same format, we rename the columns like the above, force all columns to numeric data, and add a column specifying the wine type as red.
+
+```{r}
+red_wine=read_csv2("./red-wine.csv",col_types="n")  
+colnames(red_wine)=variables$Variables
+red_wine= red_wine |>
+  mutate_all(as.numeric)
+red_wine= mutate(red_wine, wine_type=rep("red", nrow(red_wine)))
+```
+
+We now combine the white and red wine data sets into one `tibble`, filter the data to only look at high-quality wines with a reasonable alcohol content, and sort the `tibble` by the quality of the wine. We also select only certain variables, and then add columns for the mean and standard deviation of the alcohol content, contingent on the classification of quality.
+
+```{r}
+wine=bind_rows(white_wine, red_wine)  
+
+wine=wine |>
+  filter(quality>6.5 & alcohol<132) |>
+  arrange(desc(quality)) |>
+  select(contains("acid"), c("alcohol", "wine_type", "quality")) |>
+  group_by(quality) |>
+  mutate(across(alcohol, list(mean=mean, sd=sd), .names="{.col}_{.fn}"))
+wine
+```
