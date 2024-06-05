@@ -153,3 +153,53 @@ wine=wine |>
   mutate(across(alcohol, list(mean=mean, sd=sd), .names="{.col}_{.fn}"))
 wine
 ```
+
+## Relational Database Practice
+
+We know move on to relational databases, after loading in Sean Lahman's baseball database. One of our first tasks is to return Hall Of Famer's along with their year of induction and the category they were inducted for.
+
+```{r}
+con=dbConnect(RSQLite::SQLite(), "lahman.db")
+dbListTables(con)
+tbl(con, "Teams")
+
+
+hof=tbl(con, "HallofFame") |>
+  filter(inducted=="Y") |>
+  select(c("playerID", "yearID", "category"))
+```
+
+This is some great information, but lacks some meaningful information, perhaps most importantly the players/coaches/umpires/etc. actual name! We can add this information by joining tables as shown below.
+
+```{r}
+named_hof=right_join(tbl(con, "People") ,hof) |>
+  select(c("playerID", "nameFirst", "nameLast", "yearID", "category"))
+named_hof=as_tibble(named_hof)
+named_hof
+```
+
+Now we turn our attention to the managers. We first filter down the dataframe, then compute their winning percentage, then sort the result.
+
+```{r}
+managers=tbl(con, "Managers")
+
+managers=managers |>
+  select("playerID", "G", "W", "L") |>
+  group_by(playerID) |>
+  summarize(G_managed=sum(G, na.rm=TRUE),
+            Total_W=sum(W, na.rm=TRUE),
+            Total_L=sum(L, na.rm=TRUE)) |>
+  collect()
+
+  Total_WP=managers$Total_W/managers$G_managed
+  managers=bind_cols(managers, Total_WP=Total_WP) |>
+    arrange(desc(Total_WP))
+  managers
+```
+
+Finally, we look at all the people in the hall of fame who have ever managed a game.
+
+```{r}
+manager_hof=left_join(managers, named_hof, by="playerID")
+manager_hof
+```

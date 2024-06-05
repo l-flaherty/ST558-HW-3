@@ -132,4 +132,33 @@ wine
 
 
 #####4. Database Practice#####  
+con=dbConnect(RSQLite::SQLite(), "lahman.db")
+dbListTables(con)
+tbl(con, "Teams")
+
+
+hof=tbl(con, "HallofFame") |>
+  filter(inducted=="Y") |>
+  select(c("playerID", "yearID", "category"))
+
+named_hof=right_join(tbl(con, "People") ,hof) |>
+  select(c("playerID", "nameFirst", "nameLast", "yearID", "category"))
+named_hof=as_tibble(named_hof)
+
+managers=tbl(con, "Managers")
+
+managers=managers |>
+  select("playerID", "G", "W", "L") |>
+  group_by(playerID) |>
+  summarize(G_managed=sum(G, na.rm=TRUE),
+            Total_W=sum(W, na.rm=TRUE),
+            Total_L=sum(L, na.rm=TRUE)) |>
+  collect()
+
+  Total_WP=managers$Total_W/managers$G_managed
+  managers=bind_cols(managers, Total_WP=Total_WP) |>
+    arrange(desc(Total_WP))
+  managers
   
+manager_hof=left_join(managers, named_hof, by="playerID")
+manager_hof
